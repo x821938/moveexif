@@ -2,8 +2,8 @@ import os
 import sys
 from pathlib import Path
 from exif import Image
-from datetime import datetime
 import click
+import datetime
 
 
 def get_exif_date(image_file):
@@ -13,7 +13,7 @@ def get_exif_date(image_file):
         with open(image_file, 'rb') as file_handle:
             my_image = Image(file_handle)
             date_str = my_image.datetime
-            date = datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
+            date = datetime.datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
             return date
     except:
         return False
@@ -39,7 +39,12 @@ def get_jpgs(path):
                 yield src_img
 
 
-def exif_move(source_dir, destination_dir, remove_if_dest_exist):
+def get_file_date(filename):
+    return datetime.datetime.fromtimestamp(os.path.getmtime(filename))
+    
+
+
+def exif_move(source_dir, destination_dir, delete_oldest):
     ''' Internal move command that does all the work. This is invoked by click-cmd-line
     Functionality is explained in exifmove function '''
     for src_file in get_jpgs(source_dir):
@@ -50,36 +55,44 @@ def exif_move(source_dir, destination_dir, remove_if_dest_exist):
             if src_file != dst_file: # Only move files that are in the wrong place
                 os.makedirs(dst_file.parent, exist_ok=True)
                 if dst_file.exists():
-                    print(f'{src_file} -> {dst_file}   # TARGET ALREADY EXISTS')
-                    if remove_if_dest_exist:
-                        src_file.unlink()
-                        print(f'{src_file}   # REMOVED')
+                    print(f'Target Exist: {src_file} -> {dst_file}')
+                    if delete_oldest:
+                        src_date = get_file_date(src_file)
+                        dst_date = get_file_date(dst_file)
+                        if src_date < dst_date:
+                            src_file.unlink()
+                            print(f'Old deleted in src: {src_file}')
+                        else:
+                            dst_file.unlink()
+                            print(f'Old deleted in dst: {dst_file}')
+                            src_file.rename(dst_file)
+                            print(f'Moved: {src_file} -> {dst_file}')
                 else: 
                     src_file.rename(dst_file)
-                    print(f'{src_file} -> {dst_file}   # MOVED')
+                    print(f'Moved: {src_file} -> {dst_file}')
             else:
-                print(f'{src_file}   # OK PLACED')
+                print(f'OK: {src_file}')
         else:
-            print(f'{src_file}   # NO EXIF DATE')
+            print(f'No exif date: {src_file}')
             
 
 @click.command()
 @click.argument('source-dir', type=click.Path(exists=True))
 @click.argument('destination-dir', type=click.Path(exists=True), required=False)
-@click.option('--remove-if-dest-exist', '-r', default=False, is_flag=True, help='If provided then the source file will be deleted if the same filename exists in destination directory')
-def exifmove(source_dir, destination_dir, remove_if_dest_exist):
+@click.option('--delete-oldest', '-d', default=False, is_flag=True, help='If this parameter provided the oldest file is deleted if filename exists in both source and destination dir') 
+def exifmove(source_dir, destination_dir, delete_oldest):
     '''
     This cmd will scan through all the files in the SOURCE_DIR for jpg-files. When
     a file is found, the exif date is extracted. Then the DESTINATION_DIR is scanned
     to see if the file is in /YEAR/YEAR-MONTH-DAY folder. If not, it is moved there.
-    If it's already there nothing is done unless --remove-if-dest-exist option is 
-    provided. If provided, the source file will be deleted.
+    If it's already there nothing is done unless --delete-oldest option is 
+    provided. If provided, the oldest for the source and destination file will be deleted.
     If DESTINATION_DIR is omitted then destination will be the same as the source.
     '''
-    if not destination_dir:
-        destination_dir = source_dir
-    exif_move(source_dir, destination_dir, remove_if_dest_exist)
+    if not destination_dir: destination_dir = source_dir
+    exif_move(source_dir, destination_dir, delete_oldest)
 
 if __name__ == '__main__':
-    print('Should be run from command line')
+    print('Should be run from command line. From package dir run:')
+    print('pip install --editable .')
     #exif_move('c:\\temp\\imgtest', 'c:\\temp\\imgtest', True) 
